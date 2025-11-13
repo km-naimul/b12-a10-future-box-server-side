@@ -29,9 +29,35 @@ async function run (){
         
         const db = client.db('smart_db')
         const transactionsCollection = db.collection('transactions');
+        const usersCollection = db.collection('users');
+
+
+        app.post('/users',async(req, res)=> {
+            const newUser = req.body;
+
+            const email = req.body.email;
+            const query = {email: email}
+            const existingUser = await usersCollection.findOne(query);
+            if(existingUser){
+                res.send({message: 'user already exits. do not need to add'})
+            }
+            else{
+                const result = await usersCollection.insertOne(newUser);
+            res.send(result);
+            }
+            
+        })
 
         app.get('/transactions', async(req, res)=>{
-            const cursor = transactionsCollection.find();
+
+            console.log(req.query)
+            const email = req.query.email;
+            const query = {}
+            if (email){
+                query.email = email;
+            }
+
+            const cursor = transactionsCollection.find(query).sort({amount: -1 , date: -1});
             const result = await cursor.toArray();
             res.send(result)
         });
