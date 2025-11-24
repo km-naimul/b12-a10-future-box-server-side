@@ -1,4 +1,3 @@
-// server.js
 const express = require('express');
 const cors = require('cors');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
@@ -9,7 +8,6 @@ const port = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// -------------------- MONGO URI --------------------
 const uri = process.env.MONGO_URI || "mongodb+srv://fineasedbUser:nOC5Qz8xIk0t0eoO@my-first-cluster1.c0ymrhl.mongodb.net/?appName=MY-First-Cluster1";
 
 const client = new MongoClient(uri, {
@@ -30,32 +28,24 @@ async function run() {
     const budgetsCollection = db.collection('budgets');     // new
     const savingsCollection = db.collection('savings');     // new
     const reportsCollection = db.collection('reports');
-
     app.get('/', (req, res) => {
       res.send('Smart server is running');
     });
-
-    // -------------------- USERS --------------------
     app.post('/users', async (req, res) => {
       const newUser = req.body;
       if (!newUser?.email) return res.status(400).send({ message: 'email required' });
-
       const existing = await usersCollection.findOne({ email: newUser.email });
       if (existing) return res.send({ message: 'User already exists' });
-
       const result = await usersCollection.insertOne(newUser);
       res.send(result);
     });
 
-    // -------------------- TRANSACTIONS (filter, sort) --------------------
     app.get('/transactions', async (req, res) => {
       const { email, category, type, sort } = req.query;
       const query = {};
       if (email) query.email = email;
       if (category) query.category = category;
       if (type) query.type = type;
-
-      // sort: date or amount (desc)
       let sortOption = { date: -1 };
       if (sort === 'amount') sortOption = { amount: -1 };
       if (sort === 'date') sortOption = { date: -1 };
@@ -64,29 +54,24 @@ async function run() {
       res.send(result);
     });
 
-    // single transaction
     app.get('/transactions/:id', async (req, res) => {
       const id = req.params.id;
       const result = await transactionsCollection.findOne({ _id: new ObjectId(id) });
       res.send(result);
     });
 
-    // add transaction
     app.post('/transactions', async (req, res) => {
       const data = req.body;
       if (!data.email || !data.amount || !data.category || !data.type) {
         return res.status(400).send({ message: "Missing fields!" });
       }
-      data.amount = Number(data.amount); // ensure number
+      data.amount = Number(data.amount); 
       data.createdAt = new Date();
-      // if date provided, keep it as ISO string or Date
       if (data.date) data.date = new Date(data.date).toISOString();
 
       const result = await transactionsCollection.insertOne(data);
       res.send(result);
     });
-
-    // update transaction
     app.patch('/transactions/:id', async (req, res) => {
       const id = req.params.id;
       const updated = req.body;
@@ -103,23 +88,16 @@ async function run() {
       res.send(result);
     });
 
-    // delete
     app.delete('/transactions/:id', async (req, res) => {
       const id = req.params.id;
       const result = await transactionsCollection.deleteOne({ _id: new ObjectId(id) });
       res.send(result);
     });
-
-    // -------------------- BUDGETS --------------------
-    // create / update budget for user & category
-    // ========== SAVE A BUDGET ==========
 app.post("/budget", async (req, res) => {
   const { email, category, amount } = req.body;
-
   if (!email || !category || !amount)
     return res.status(400).send({ message: "Fields missing" });
 
-  // পুরানো budget থাকলে update করবে
   const result = await budgetsCollection.updateOne(
     { email, category },
     { $set: { amount: Number(amount) } },
@@ -128,17 +106,53 @@ app.post("/budget", async (req, res) => {
 
   res.send(result);
 });
+app.get('/expenses-summary-monthly', async (req, res) => {
+  const email = req.query.email;
+  const month = parseInt(req.query.month); // 1-12
 
+  if (!email || !month) {
+    return res.status(400).send({ message: "Email and month required" });
+  }
+  try {
+    const pipeline = [
+      {
+        $match: {
+          email: email,
+          type: "expense"
+        }
+      },
+      {
+        $addFields: {
+          month: { $month: { $toDate: "$date" } }
+        }
+      },
+      {
+        $match: {
+          month: month
+        }
+      },
+      {
+        $group: {
+          _id: "$category",
+          totalSpent: { $sum: "$amount" }
+        }
+      }
+    ];
+    const result = await transactionsCollection.aggregate(pipeline).toArray();
+    res.send(result);
 
-// ========== GET USER BUDGETS ==========
+  } catch (err) {
+    console.error(err);
+    res.status(500).send({ message: "Error processing monthly summary" });
+  }
+});
+
 app.get("/budget", async (req, res) => {
   const email = req.query.email;
   const result = await budgetsCollection.find({ email }).toArray();
   res.send(result);
 });
 
-
-//...............//
 app.post("/save-leftover", async (req, res) => {
   const { email, category, leftover } = req.body;
 
@@ -160,20 +174,15 @@ app.post("/save-leftover", async (req, res) => {
       { $inc: { current: leftover } }
     );
   }
-
   res.send({ message: "Leftover saved!" });
 });
 
-
-    // delete budget if needed
     app.delete('/budget/:id', async (req, res) => {
       const id = req.params.id;
       const result = await budgetsCollection.deleteOne({ _id: new ObjectId(id) });
       res.send(result);
     });
 
-    // -------------------- SAVINGS --------------------
-    // create / update saving goal
     app.post("/savings", async (req, res) => {
   const data = req.body;
   if (!data.email || !data.name || !data.target) {
@@ -184,14 +193,12 @@ app.post("/save-leftover", async (req, res) => {
   res.send(result);
 });
 
-// ========== GET USER SAVINGS ==========
 app.get("/savings", async (req, res) => {
   const email = req.query.email;
   const result = await savingsCollection.find({ email }).toArray();
   res.send(result);
 });
 
-    // add money to a savings goal (increment)
     app.patch('/savings/add/:name', async (req, res) => {
       const name = req.params.name;
       const { email, amount } = req.body;
@@ -204,8 +211,6 @@ app.get("/savings", async (req, res) => {
       res.send(result);
     });
 
-    // -------------------- EXPENSE SUMMARY PER CATEGORY (for a user) --------------------
-    // Aggregates all expense transactions per category for that user
    app.get("/expenses-summary", async (req, res) => {
   const email = req.query.email;
 
@@ -222,14 +227,12 @@ app.get("/savings", async (req, res) => {
   const result = await transactionsCollection.aggregate(pipeline).toArray();
   res.send(result);
 });
-//.///////////////
 
 app.get("/savings", async (req, res) => {
   const result = await savingsCollection.find({ email: req.query.email }).toArray();
   res.send(result);
 });
 
- // -------------------- TRANSACTION-BALANCE  --------------------
     app.get('/transaction-balance', async (req, res) => {
       const email = req.query.email;
       if (!email) return res.status(400).send({ message: "Email required" });
@@ -239,7 +242,7 @@ app.get("/savings", async (req, res) => {
 
     console.log('Connected to MongoDB and routes are ready.');
   } finally {
-    // no client.close() — keep connection open while server running
+
   }
 }
 
